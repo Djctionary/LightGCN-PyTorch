@@ -340,12 +340,23 @@ class Loader(BasicDataset):
                 print("generating adjacency matrix")
                 s = time()
                 adj_mat = sp.dok_matrix((self.n_users + self.m_items, self.n_users + self.m_items), dtype=np.float32)
-                adj_mat = adj_mat.tolil()
-                R = self.UserItemNet.tolil()
-                adj_mat[:self.n_users, self.n_users:] = R
-                adj_mat[self.n_users:, :self.n_users] = R.T
-                adj_mat = adj_mat.todok()
-                # adj_mat = adj_mat + sp.eye(adj_mat.shape[0])
+                R_csr = self.UserItemNet # self.UserItemNet is a csr_matrix
+
+                # Populate R and R.T blocks by iterating over non-zero elements of R_csr
+                for r_idx in range(R_csr.shape[0]): # r_idx is a user index
+                    for i_ptr in range(R_csr.indptr[r_idx], R_csr.indptr[r_idx+1]):
+                        c_idx = R_csr.indices[i_ptr] # c_idx is an item index
+                        value = R_csr.data[i_ptr]    # Value of interaction (typically 1.0)
+
+                        # Assign to R block (user_idx, item_idx_offset + item_idx)
+                        adj_mat[r_idx, self.n_users + c_idx] = value
+                        
+                        # Assign to R.T block (item_idx_offset + item_idx, user_idx)
+                        adj_mat[self.n_users + c_idx, r_idx] = value
+                
+                # adj_mat is now a DOK matrix with R and R.T populated.
+                # The original "adj_mat = adj_mat.todok()" line is no longer needed here.
+                # adj_mat = adj_mat + sp.eye(adj_mat.shape[0]) # This was commented out in original, remains so.
                 
                 rowsum = np.array(adj_mat.sum(axis=1))
                 d_inv = np.power(rowsum, -0.5).flatten()
